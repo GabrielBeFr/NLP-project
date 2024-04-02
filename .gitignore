@@ -1,1 +1,4 @@
 .python-version
+NLP
+src/.ipynb_checkpoints/
+src/__pycache__/
