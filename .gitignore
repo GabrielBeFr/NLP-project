@@ -2,3 +2,5 @@
 NLP
 src/.ipynb_checkpoints/
 src/__pycache__/
+slurms/
+sh_logs/
