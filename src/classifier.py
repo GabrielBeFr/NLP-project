@@ -9,9 +9,6 @@ from torch.utils.data import DataLoader, TensorDataset
 from sklearn.model_selection import train_test_split
 from transformers import AutoConfig, AutoTokenizer, TFAutoModelForSequenceClassification, AutoModelForSequenceClassification, AdamW
 
-from tqdm import tqdm
-import matplotlib.pyplot as plt
-
 
 class Classifier:
     """
@@ -36,8 +33,8 @@ class Classifier:
         self.loss_fn = nn.CrossEntropyLoss()
         self.softmax = nn.Softmax(dim=1)
 
-        for param in self.embedder.parameters():
-            param.requires_grad = False
+        # for param in self.embedder.parameters():
+        #     param.requires_grad = False
     
     
     
@@ -79,32 +76,37 @@ class Classifier:
         val_loader = DataLoader(val_dataset, batch_size=32)
 
         # Define optimizer and training settings
-        optimizer = AdamW(self.classifier.parameters(), lr=1e-5)
+        params = list(self.embedder.parameters()) + list(self.classifier.parameters())
+        optimizer = AdamW(params, lr=5e-6) # low lr to avoid catastrophic forgetting
         self.embedder.to(device)
         self.classifier.to(device)
         # Training loop
-        num_epochs = 15
-        self.embedder.train()
+        num_epochs = 5
 
         loss_history = []
         for epoch in range(num_epochs):
+            self.embedder.train()
             self.classifier.train()
-            for batch in tqdm(train_loader, desc=f'Epoch {epoch + 1}/{num_epochs}'):
+            for batch in train_loader:
                 input_ids, attention_mask, input_word_ids, attention_word_mask, labels = batch
                 input_ids, attention_mask, input_word_ids, attention_word_mask, labels = input_ids.to(device), attention_mask.to(device), input_word_ids.to(device), attention_word_mask.to(device), labels.to(device)
 
                 optimizer.zero_grad()
+                # forward pass
                 embeddings = self.embedder(input_ids=input_ids, attention_mask=attention_mask)["last_hidden_state"][:, 0, :]
                 embeddings_words = self.embedder(input_ids=input_word_ids, attention_mask=attention_word_mask)["last_hidden_state"][:, 0, :]
 
                 concat_embeddings = torch.cat([embeddings, embeddings_words], dim=1)
                 outputs = self.classifier(concat_embeddings)
+
+                # grad computation
                 loss = self.loss_fn(outputs, labels)
                 loss.backward()
                 loss_history.append(loss.item())
                 optimizer.step()
 
             # Validation
+            self.embedder.eval()
             self.classifier.eval()
             total_correct = 0
             total_examples = 0
@@ -126,9 +128,6 @@ class Classifier:
 
             accuracy = total_correct / total_examples
             print(f'Epoch {epoch + 1}/{num_epochs}, Validation Accuracy: {accuracy:.4f}')
-
-        plt.plot(pd.Series(loss_history).rolling(100).mean())
-        plt.show()
 
 
     def predict(self, data_filename: str, device: torch.device) -> List[str]:
